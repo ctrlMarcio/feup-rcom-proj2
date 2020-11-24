@@ -1,0 +1,3 @@
+#define ARGS_ERROR 1
+
+#define INVALID_URL_ERROR 2
