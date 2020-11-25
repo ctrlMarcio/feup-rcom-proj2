@@ -12,5 +12,3 @@ typedef enum type {
 } type;
 
 bool substring(char* string, unsigned first, unsigned length, char* res);
-
-unsigned string_len(char* string);
