@@ -5,6 +5,7 @@ typedef struct ftp_info {
     char password[1024];       // TODO macro
     char host[1024];               // TODO macro
     char path[1024];               // TODO macro
+    int port;
 } ftp_info;
 
 typedef enum type {
@@ -12,3 +13,5 @@ typedef enum type {
 } type;
 
 bool substring(char* string, unsigned first, unsigned length, char* res);
+
+void get_string_after(char *original, char delimitor, char *result);
