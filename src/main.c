@@ -13,26 +13,23 @@
 #include "error.h"
 #include "util.h"
 
-int send_string(char* string, int fd) {
-    char res[1024];
+//TODO: get these functions out of here & doc them
+int sendString(char* string, int fd) {
+    char res[ARRAY_SIZE];
     sprintf(res, "%s\n", string);
     int bytes = write(fd, res, strlen(res));
-
-    // if (bytes >= 0)
-    //     printf("Written bytes %d\n", bytes);
 
     printf("> %s\n", string);
 
     return bytes;
 }
 
-int read_reply(int fd, char* buf) {
+int readReply(int fd, char* buf) {
     char c;
     int bytes = 0;
     bool lastLine = false;
     while (read(fd, &c, 1) >= 0) {
         buf[bytes] = c;
-        // printf("%c",c);      //TEST: read char by char and print
         if ((buf[bytes - 4] == '\n' || bytes < 4) && isdigit(buf[bytes - 3]) && isdigit(buf[bytes - 2]) && isdigit(buf[bytes - 1]) && buf[bytes] != '-') lastLine = true;
         if (lastLine && c == '\n') break;
 
@@ -43,54 +40,83 @@ int read_reply(int fd, char* buf) {
 }
 
 int login(int fd, ftp_info* info) {
-    char user_cmd[2048], pass_cmd[2048];
-    char server_reply[1024];
+    char user_cmd[COMMAND_SIZE], pass_cmd[COMMAND_SIZE];
+    char server_reply[ARRAY_SIZE];
 
     // username
     sprintf(user_cmd, "USER %s",info->user);
-    send_string(user_cmd, fd);
-
-    if (read_reply(fd, server_reply) < 0) {
-        printf("Error reading reply when logging in.");
-        return (8);  // TODO: macro ihih
+    if(sendString(user_cmd, fd) < 0){
+        printf("Error sending user command.");
+        return (SEND_LOGIN_USER_ERROR);
     }
 
-    printf("< %s\n", server_reply);  //TEST
+    if (readReply(fd, server_reply) < 0) {
+        printf("Error reading reply when logging in: user command.");
+        return (READ_LOGIN_USER_ERROR);
+    }
+
+    printf("< %s\n", server_reply);
 
     memset(server_reply, 0, sizeof server_reply);
 
     // password
     sprintf(pass_cmd, "PASS %s", info->password);
-    send_string(pass_cmd, fd);
-
-    if (read_reply(fd, server_reply) < 0) {
-        printf("Error reading reply when logging in.");
-        return (8);  // TODO: macro ihih
+    if(sendString(pass_cmd, fd) < 0){
+        printf("Error sending pass command.");
+        return (SEND_LOGIN_PASS_ERROR);
     }
 
-    printf("< %s\n", server_reply);  //TEST
+    if (readReply(fd, server_reply) < 0) {
+        printf("Error reading reply when logging in: pass command");
+        return (READ_LOGIN_PASS_ERROR);
+    }
+
+    printf("< %s\n", server_reply);
+
+    memset(server_reply, 0, sizeof server_reply);
 
     return 0;
 }
 
 int parseURL(char* url, ftp_info* info) {
-    //confirm ftp beginning
-    char res[1024];             // TODO macro
-    substring(url, 0, 6, res);  // TODO check return
+    char res[ARRAY_SIZE];
 
-    if (strcmp(res, "ftp://"))
+    substring(url, 0, 6, res);  //TODO: é mesmo necessário verificar erros nesta função? ver condições de retorno 'false'
+
+    /*
+    if(!substring(url, 0, 6, res)){
+        printf("Error parsing URL: wrong URL format."); //hmm...
+        return INVALID_URL_ERROR;    //TODO: não é um ToDo mas I mean, é um erro de URL right? vamos criar outra macro para isto em específico?
+    }  
+    */
+
+    if (strcmp(res, URL_BEGINNING))
         return INVALID_URL_ERROR;
 
-    //divide and build struct
-    type type = USER;
+
+    //check if user & password are provided
+    memset(res, 0, sizeof res);
+
+    substring(url, 6, strlen(url)-7, res);
+
+    type type;
+    if(strchr(res,':') != NULL) //user & password provided
+        type = USER;
+    else {
+        type = HOST;
+        strcpy(info->user, DEFAULT_USER);
+        strcpy(info->password, DEFAULT_PASS);
+    }
+
     unsigned j = 0;
     unsigned len = strlen(url);
 
+    //divide and build struct
     for (unsigned i = 6; i < len; ++i) {
         char c = url[i];
 
-        // TODO switch case
-        if (type == USER) {
+        switch(type){
+        case USER:
             if (c == ':') {
                 info->user[j] = '\0';
                 type = PASSWORD;
@@ -98,7 +124,8 @@ int parseURL(char* url, ftp_info* info) {
             } else {
                 info->user[j++] = c;
             }
-        } else if (type == PASSWORD) {
+            break;
+        case PASSWORD:
             if (c == '@') {
                 info->password[j] = '\0';
                 type = HOST;
@@ -106,7 +133,8 @@ int parseURL(char* url, ftp_info* info) {
             } else {
                 info->password[j++] = c;
             }
-        } else if (type == HOST) {
+            break;
+        case HOST:
             if (c == '/') {
                 info->host[j] = '\0';
                 type = PATH;
@@ -114,25 +142,27 @@ int parseURL(char* url, ftp_info* info) {
             } else {
                 info->host[j++] = c;
             }
-        } else {
+            break;
+        default:
             info->path[j++] = c;
         }
     }
 
     info->path[j] = '\0';
+
 }
 
 char* getServerAddr(char* host) {
     struct hostent* h;
     if ((h = gethostbyname(host)) == NULL) {
         herror("gethostbyname");
-        exit(3);  // TODO add macro error
+        exit(SERVER_ADDR_ERROR);
     }
 
     return inet_ntoa(*((struct in_addr*)h->h_addr));
 }
 
-int connect_server(ftp_info info) {
+int connectServer(ftp_info info) {
     int sockfd;
     struct sockaddr_in server_addr;
 
@@ -141,41 +171,42 @@ int connect_server(ftp_info info) {
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = inet_addr(getServerAddr(info.host)); /*32 bit Internet address network byte ordered*/
     server_addr.sin_port = htons(info.port);                                  /*server TCP port must be network byte ordered */
-    // TODO 21 bad MACRO good
 
     /*open an TCP socket*/
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("socket()");
-        exit(4);  // TODO macro
+        exit(OPEN_SOCKET_ERROR);
     }
 
     /*connect to the server*/
     if (connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         perror("connect()");
-        exit(5);  // TODO macro ihih
+        exit(CONNECT_SOCKET_ERROR);
     }
 
     return sockfd;
 }
 
-int calculate_port(char * reply){
-    int portMSB, portLSB;
+int calculatePort(char * reply){
+    int portMSB, portLSB, res;
 
-    sscanf( reply, "227 Entering Passive Mode (%*d,%*d,%*d,%*d,%d,%d).", &portMSB, &portLSB );
+    if((res = sscanf( reply, "227 Entering Passive Mode (%*d,%*d,%*d,%*d,%d,%d).", &portMSB, &portLSB)) < 2){
+        return -1;
+    }
 
     return portMSB * 256 + portLSB;
 }
 
-int download_file(int fd, char* path){
-    char filename[1024];    // TODO: macro
+int downloadFile(int fd, char* path){  //FIXME: não é um fixme. sendo que isto apenas cria um ficheiro e escreve e todos os outros erros já são verificados antes, há necessidade de mais error checking aqui?
+    char filename[ARRAY_SIZE];    
     get_string_after(path, '/', filename);
 
     FILE *file;
     file = fopen(filename, "w+");
     
-    char buffer[1024];
+    char buffer[ARRAY_SIZE];
     int ret;
-    while((ret = read(fd, buffer, 1024)) > 0){
+    while((ret = read(fd, buffer, ARRAY_SIZE)) > 0){
         fwrite(buffer, sizeof(char), ret, file);
     }
 
@@ -184,25 +215,26 @@ int download_file(int fd, char* path){
     return 0;
 }
 
-int close_connection(int fd) {
+int closeConnection(int fd) {
     return close(fd);
 }
 
 int main(int argc, char** argv) {
     ftp_info info;
-    info.port=21;       // TODO: 21 bad Macro good
+    info.port=SERVER_PORT;
+
     if (argc != 2 || !parseURL(argv[1], &info)) {
         printf("Usage:\tdownload ftp://[<user>:<password>@]<host>/<url-path>\n");
         exit(ARGS_ERROR);
     }
 
-    int fd = connect_server(info);
+    int fd = connectServer(info);
 
     //welcome message
-    char reply[1024];  // FIXME: this just a random number... ...
-    if (read_reply(fd, reply) < 0) {
-        printf("Error reading reply.");
-        return (6);  // TODO: macro ihih
+    char reply[ARRAY_SIZE];  
+    if (readReply(fd, reply) < 0) {
+        printf("Error reading welcome message.\n");
+        return (READ_WELCOME_ERROR);
     }
 
     printf("< %s\n", reply);
@@ -212,33 +244,47 @@ int main(int argc, char** argv) {
     if ((error = login(fd, &info)) > 0) return error;
 
     //passive mode
-    send_string("pasv", fd);
+    if(sendString("pasv", fd)<0){
+        printf("Error sending passive command.\n");
+        return(SEND_PASV_ERROR);
+    }
     memset(reply, 0, sizeof reply);
-    if(read_reply(fd, reply) < 0){
-        printf("Error reading reply to passive_command.");
-        return(7); // TODO: macro ihih
+    if(readReply(fd, reply) < 0){
+        printf("Error reading reply to passive command.\n");
+        return(READ_PASV_ERROR);
     }
     printf("< %s\n", reply);
 
+    info.port = calculatePort(reply);
+    if(info.port < 0){
+        printf("Error calculating port.\n");    //FIXME: maybe a better message?
+        return(CALCULATE_PORT_ERROR);
+    }
 
-    info.port = calculate_port(reply);
-
-    int fd2 = connect_server(info);
+    int fd2 = connectServer(info);
 
     //retr
-    char retrCmd[2048];
+    char retrCmd[COMMAND_SIZE];
     sprintf(retrCmd, "retr %s", info.path);
-    send_string(retrCmd, fd);
-
+    if(sendString(retrCmd, fd) < 0){
+        printf("Error sending 'retr' command.\n");
+        return(SEND_RETR_ERROR);
+    }
     memset(reply, 0, sizeof reply);
-    if(read_reply(fd, reply) < 0){
-        printf("Error reading reply to passive_command.");
-        return(7); // TODO: macro ihih
+    if(readReply(fd, reply) < 0){
+        printf("Error reading reply to 'retr' command.\n");
+        return(READ_RETR_ERROR);
     }
     printf("< %s\n", reply);
 
-    download_file(fd2,info.path);
+    downloadFile(fd2,info.path);
 
-    close_connection(fd);
-    close_connection(fd2);
+    if(closeConnection(fd) < 0){
+        printf("Error closing connection to socket.\n");
+        return(CLOSE_CONNECTION_ERROR);
+    }
+    if(closeConnection(fd2) < 0){
+        printf("Error closing connection to socket.\n");
+        return(CLOSE_CONNECTION_ERROR);
+    }
 }
