@@ -31,7 +31,7 @@ switch (gtk)
 > enable
 
 > configure terminal
-> vlan30
+> vlan 30
 > end
 > show vlan
 
@@ -50,7 +50,7 @@ switch (gtk)
 > show vlan (verify)
 
 > configure terminal
-> vlan31
+> vlan 31
 > end
 > show vlan
 
