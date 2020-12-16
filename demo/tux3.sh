@@ -10,5 +10,4 @@ ifconfig eth0 172.16.30.1/24
 route add default gw 172.16.30.254
 
 # adds the DNS
-echo 'search netlab.fe.up.pt\nnameserver 172.16.1.1*' > /etc/resolv.conf
-'
+echo -e 'search netlab.fe.up.pt\nnameserver 172.16.1.1*' > /etc/resolv.conf
