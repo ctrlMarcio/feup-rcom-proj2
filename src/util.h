@@ -1,9 +1,12 @@
 #include <stdbool.h> 
+#include <stdio.h>
+#include <string.h>
+
 #include "info.h"
 
-//TODO: doc code
+
 /**
- * @brief 
+ * @brief Structure containing ftp connection information
  * 
  */
 typedef struct ftp_info {
@@ -15,7 +18,7 @@ typedef struct ftp_info {
 } ftp_info;
 
 /**
- * @brief 
+ * @brief Structure used to parse arguments
  * 
  */
 typedef enum type {
